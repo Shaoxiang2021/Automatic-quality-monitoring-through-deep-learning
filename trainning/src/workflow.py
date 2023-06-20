@@ -47,6 +47,8 @@ class MyTrainer(object):
                 print(f"{k}: {round(v[-1], 4)} | ", end="")
             print()
 
+        return logger
+
     def train_epoch(self):
         run_loss_ep = 0.0
         run_preds_ep = []
@@ -109,4 +111,3 @@ class MyTrainer(object):
 
     def save_model(self, path):
         torch.save(self._model.state_dict(), path)
-

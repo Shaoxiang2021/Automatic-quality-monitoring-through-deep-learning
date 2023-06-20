@@ -7,7 +7,7 @@ import torch.nn as nn
 
 
 class ResidualBlock2D(nn.Module):
-    def __init__(self, in_channels, channels, stride):
+    def __init__(self, in_channels, channels, stride, dropout_rate=0):
         """
         2D Residual Block consisting of 2 Conv Layers with BatchNorm.
         If in_channels != channels or stride != 1, downsampling is
@@ -46,10 +46,13 @@ class ResidualBlock2D(nn.Module):
                                stride=(1, 1),
                                padding=1)
         self.bn2 = nn.BatchNorm2d(num_features=channels)
+        self.dropout = nn.Dropout(dropout_rate)
 
     def forward(self, x):
         out = self.a(self.bn1(self.conv1(x)))
+        out = self.dropout(out)
         out = self.bn2(self.conv2(out))
+        out = self.dropout(out)
         if self.downsample is not None:
             x = self.downsample(x)
         out = self.a(out + x)
@@ -80,13 +83,23 @@ class MyModel(nn.Module):
         self.maxpool_in = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         # define as many residual blocks as specified in a nn.ModuleList
-        self.res_blocks = nn.ModuleList([ResidualBlock2D(in_channels=channels,
+        '''self.res_blocks = nn.ModuleList([ResidualBlock2D(in_channels=channels,
                                                          channels=channels,
-                                                         stride=1) for i in range(0, num_blocks)])
+                                                         stride=1) for i in range(0, num_blocks)])'''
+        self.res_blocks = nn.ModuleList([
+                                        ResidualBlock2D(in_channels=channels, channels=channels, stride=1),
+                                        ResidualBlock2D(in_channels=channels, channels=channels, stride=1), 
+                                        ResidualBlock2D(in_channels=channels, channels=channels*2, stride=2),
+                                        ResidualBlock2D(in_channels=channels*2, channels=channels*2, stride=1),
+                                        ResidualBlock2D(in_channels=channels*2, channels=channels*4, stride=2),
+                                        ResidualBlock2D(in_channels=channels*4, channels=channels*4, stride=1),
+                                        ResidualBlock2D(in_channels=channels*4, channels=channels*8, stride=2),
+                                        ResidualBlock2D(in_channels=channels*8, channels=channels*8, stride=1)
+                                        ])
 
         # average pooling over channel dims  and linear classifier
         self.avgpool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc = nn.Linear(in_features=channels, out_features=num_classes)
+        self.fc = nn.Linear(in_features=channels*8, out_features=num_classes)
 
         # activation function
         self.a = nn.ReLU()

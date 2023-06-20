@@ -36,7 +36,7 @@ def apply_forward_hook_to_conv_layers(model, hook):
 
 def main():
     # get model
-    model = MyModel(in_channels=1, num_classes=2, channels=32, num_blocks=1)
+    model = MyModel(in_channels=3, num_classes=2, channels=32, num_blocks=4)
     # model.load_state_dict(torch.load("../saved_weights/test_001.pt"))
     model.load_state_dict(torch.load(r"C:\Users\tsx10\PythonProjectsJupyter\TUM\FP\Images\trainning\saved_weights\test_001.pt"))
 

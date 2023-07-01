@@ -216,7 +216,47 @@ class MyTraniner(object):
             self.k_fold_train()
 
     def retrain(self):
-        pass
+        try:
+            # initialization for model, loaders, optimizer and writer
+            self.model = self.loader()
+            self.trainloader, _ = self.load_data()
+            self.optim = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
+
+            if self.cuda is True:
+                self.model.cuda()
+                self.loss_fn.cuda()
+
+            for epoch in range(1, self.epoch+1):
+                train_loss, train_accuracy = self.train_epoch()
+                print("epoch {0}: train loss: {1} train accuracy: {2}".format(epoch, round(train_loss, 3), round(train_accuracy, 3)))
+            model_path = self.generate_model_path()
+            self.save_model(model_path)
+
+        finally:
+            torch.cuda.empty_cache()
+
+    def accuracy(self):
+        model_path = self.generate_model_path()
+        self.model = self.loader()
+        self.model.load_state_dict(torch.load(model_path))
+        json_path = model_path.removesuffix(".pth") + ".json"
+
+        if self.cuda is True:
+                    self.model.cuda()
+                    self.loss_fn.cuda()
+
+        _, self.valloader = self.load_data()
+        self.optim = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
+        val_loss, val_accuracy = self.validate_epoch()
+
+        accuracy_dic = dict()
+        accuracy_dic["info"] = self.generate_log_dic()["info"]
+        accuracy_dic["accuracy"] = {"test loss": val_loss, "test accuracy": val_accuracy}
+
+        with open(json_path, 'w') as file:
+             json.dump(accuracy_dic, file)
+             
+        print("model --- test loss: " + str(val_loss) + " test accuracy: " + str(val_accuracy))
 
     def save_model(self, model_path):
         torch.save(self.model.state_dict(), model_path)

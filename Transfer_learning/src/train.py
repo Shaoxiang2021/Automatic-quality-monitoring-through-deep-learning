@@ -33,7 +33,7 @@ class MyTraniner(object):
 
     def load_data(self): 
         self.train_data = MyData(json_path=self.json_path, train=True)
-        if self.aug != 0:
+        if self.aug > 0:
             self.train_data = self.train_data + MyData(json_path=self.json_path, train=True, aug=self.aug)
         self.test_data = MyData(json_path=self.json_path, train=False)
         train_dataloader = DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0, generator=self.seed)

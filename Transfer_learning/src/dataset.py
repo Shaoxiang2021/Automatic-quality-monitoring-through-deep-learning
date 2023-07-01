@@ -110,14 +110,18 @@ class MyData(Dataset):
             if self.aug == 0:
                 self.paths = [sample["path"] for sample in self.data_dic["train"]]
                 self.labels = [sample["label"] for sample in self.data_dic["train"]]
-            elif 0 < self.aug < 1:
-                self.paths = [sample["path"] for sample in self.data_dic["train"]]
-                self.labels = [sample["label"] for sample in self.data_dic["train"]]
+            elif self.aug > 0:
+                aug_paths = list()
+                aug_labels = list()
+                paths = [sample["path"] for sample in self.data_dic["train"]]
+                labels = [sample["label"] for sample in self.data_dic["train"]]
                 random.seed(1)
-                for _ in range(int(len(self.paths)*(1-aug))):
-                    idx = random.randint(0, len(self.paths)-1)
-                    self.paths.pop(idx)
-                    self.labels.pop(idx)
+                for _ in range(int(len(paths)*aug)):
+                    idx = random.randint(0, len(paths)-1)
+                    aug_paths.append(paths[idx])
+                    aug_labels.append(labels[idx])
+                self.paths = aug_paths
+                self.labels = aug_labels
             else:
                 print("wrong aug input.")
         else:
@@ -131,8 +135,8 @@ class MyData(Dataset):
         # load specific sample
         img = np.load(self.paths[index], allow_pickle=True)
         label = self.labels[index]
-
-        if self.aug != 0:
+            
+        if self.aug > 0:
             img = self.augumentation(img)
         
         transformer_train = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=self.mean, std=self.std)])
@@ -162,7 +166,8 @@ class MyData(Dataset):
             transformer = transforms.RandomAutocontrast(p=1)
         else:
             transformer = transforms.ColorJitter(brightness=1)
-        img = transformer(img)
 
+        img = transformer(img)
         img = np.array(img)/255
+
         return img

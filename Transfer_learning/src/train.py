@@ -10,8 +10,10 @@ import json
 from model import LoadModule
 
 class MyTraniner(object):
-    def __init__(self, model:str, batch_size:int, learning_rate:float, epoch:int, kfold=1, cuda=False):
-
+    def __init__(self, model:str, batch_size:int, learning_rate:float, epoch:int, kfold=1, aug=0, cuda=False):
+        
+        self.seed = torch.cuda.manual_seed(1)
+        self.aug = aug
         self.json_path = r"..\data\processed\data.json"
         self.loader = LoadModule(model)
         self.batch_size=batch_size
@@ -20,7 +22,7 @@ class MyTraniner(object):
         self.lr = learning_rate
         self.epoch = epoch
         self.loss_fn = nn.CrossEntropyLoss()
-        self.log_path = "../logs/log_" + '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.kfold)])
+        self.log_path = "../logs/log_" + '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.kfold), str(self.aug)])
 
     def using_cuda(self, cuda):
         if cuda is True:
@@ -31,16 +33,18 @@ class MyTraniner(object):
 
     def load_data(self): 
         self.train_data = MyData(json_path=self.json_path, train=True)
+        if self.aug != 0:
+            self.train_data = self.train_data + MyData(json_path=self.json_path, train=True, aug=self.aug)
         self.test_data = MyData(json_path=self.json_path, train=False)
-        train_dataloader = DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0)
-        test_dataloader = DataLoader(self.test_data, batch_size=self.batch_size, shuffle=False, num_workers=0)
+        train_dataloader = DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0, generator=self.seed)
+        test_dataloader = DataLoader(self.test_data, batch_size=self.batch_size, shuffle=False, num_workers=0, generator=self.seed)
         return train_dataloader, test_dataloader
 
     def generate_model_path(self, fold_i=1):
         base_path = "../weights/model_"
-        name = '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.kfold)])
+        name = '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.aug)])
         os.makedirs(base_path + name, exist_ok=True)
-        model_path = base_path + name + '/' + '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(fold_i)]) + ".pth"
+        model_path = base_path + name + '/' + '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.aug)]) + ".pth"
         return model_path
     
     def generate_log_dic(self):
@@ -110,19 +114,20 @@ class MyTraniner(object):
         val_loss = 0
         pred_true = 0
         self.model.eval()
-        for data in self.valloader:
-            imgs, labels = data
-                
-            if self.cuda is True: 
-                imgs=imgs.cuda() 
-                labels=labels.cuda()
+        with torch.no_grad():
+            for data in self.valloader:
+                imgs, labels = data
+                    
+                if self.cuda is True: 
+                    imgs=imgs.cuda() 
+                    labels=labels.cuda()
 
-            self.optim.zero_grad()
-            with torch.no_grad():
+                self.optim.zero_grad()
+                
                 outputs = self.model(imgs)
                 loss = self.loss_fn(outputs, labels)
-            val_loss += loss.item()
-            pred_true += (outputs.argmax(1)==labels).sum().item()
+                val_loss += loss.item()
+                pred_true += (outputs.argmax(1)==labels).sum().item()
 
         return val_loss/len(self.valloader), pred_true/len(self.valloader.sampler)
     
@@ -156,7 +161,7 @@ class MyTraniner(object):
 
     def k_fold_train(self):
         try:
-            kfold = KFold(n_splits=self.kfold)
+            kfold = KFold(n_splits=self.kfold, shuffle=True)
             fold_loss = list()
             fold_accs = list()
             _, _ = self.load_data() # only train_data need
@@ -176,11 +181,11 @@ class MyTraniner(object):
 
                 epoch_dic = self.generate_epoch_dic()
 
-                train_sampler = SubsetRandomSampler(train_ids)
-                val_sampler = SubsetRandomSampler(val_ids)
+                train_sampler = SubsetRandomSampler(train_ids, generator=self.seed)
+                val_sampler = SubsetRandomSampler(val_ids, generator=self.seed)
 
-                self.trainloader = DataLoader(dataset=self.train_data, batch_size=self.batch_size, sampler=train_sampler)
-                self.valloader = DataLoader(dataset=self.train_data, batch_size=self.batch_size, sampler=val_sampler)
+                self.trainloader = DataLoader(dataset=self.train_data, batch_size=self.batch_size, sampler=train_sampler, generator=self.seed)
+                self.valloader = DataLoader(dataset=self.train_data, batch_size=self.batch_size, sampler=val_sampler, generator=self.seed)
 
                 for epoch in range(1, self.epoch+1):
 
@@ -209,6 +214,9 @@ class MyTraniner(object):
             print("kfold is not valid.")
         else:
             self.k_fold_train()
+
+    def retrain(self):
+        pass
 
     def save_model(self, model_path):
         torch.save(self.model.state_dict(), model_path)

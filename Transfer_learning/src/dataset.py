@@ -98,16 +98,28 @@ def preprocess_data(src_dir:str, out_dir:str):
         file.write(json.dumps(out_json, indent=4))
 
 class MyData(Dataset):
-    def __init__(self, json_path:str, train:bool, transform=None):
+    def __init__(self, json_path:str, train:bool, transform=None, aug=0):
         self.transform = transform
+        self.aug = aug
         with open(json_path) as file:
             self.data_dic = json.load(file)
         self.mean = self.data_dic["info"]["mean"]
         self.std = self.data_dic["info"]["std"]
 
         if train is True:
-            self.paths = [sample["path"] for sample in self.data_dic["train"]]
-            self.labels = [sample["label"] for sample in self.data_dic["train"]]
+            if self.aug == 0:
+                self.paths = [sample["path"] for sample in self.data_dic["train"]]
+                self.labels = [sample["label"] for sample in self.data_dic["train"]]
+            elif 0 < self.aug < 1:
+                self.paths = [sample["path"] for sample in self.data_dic["train"]]
+                self.labels = [sample["label"] for sample in self.data_dic["train"]]
+                random.seed(1)
+                for _ in range(int(len(self.paths)*(1-aug))):
+                    idx = random.randint(0, len(self.paths)-1)
+                    self.paths.pop(idx)
+                    self.labels.pop(idx)
+            else:
+                print("wrong aug input.")
         else:
             self.paths = [sample["path"] for sample in self.data_dic["test"]]
             self.labels = [sample["label"] for sample in self.data_dic["test"]]
@@ -119,6 +131,9 @@ class MyData(Dataset):
         # load specific sample
         img = np.load(self.paths[index], allow_pickle=True)
         label = self.labels[index]
+
+        if self.aug != 0:
+            img = self.augumentation(img)
         
         transformer_train = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=self.mean, std=self.std)])
         img = transformer_train(img)
@@ -133,3 +148,21 @@ class MyData(Dataset):
     
     def __len__(self):
         return len(self.paths)
+    
+    @staticmethod
+    def augumentation(img):
+        img = Image.fromarray((img*255).astype(np.uint8))
+
+        idx = random.randint(1, 4)
+        if idx == 1:
+            transformer = transforms.RandomRotation(degrees=10)
+        elif idx == 2:
+            transformer = transforms.GaussianBlur((7, 7), sigma=1)
+        elif idx == 3:
+            transformer = transforms.RandomAutocontrast(p=1)
+        else:
+            transformer = transforms.ColorJitter(brightness=1)
+        img = transformer(img)
+
+        img = np.array(img)/255
+        return img

@@ -1,4 +1,3 @@
-from torch.utils.tensorboard import SummaryWriter
 import torch
 from torch import nn
 from dataset import MyData
@@ -7,28 +6,21 @@ from torch.utils.data import SubsetRandomSampler
 from sklearn.model_selection import KFold
 import numpy as np
 import os
+import json
+from model import LoadModule
 
 class MyTraniner(object):
-    def __init__(self, model, batch_size:int, learning_rate:float, epoch:int, cuda=False):
+    def __init__(self, model:str, batch_size:int, learning_rate:float, epoch:int, kfold=1, cuda=False):
 
         self.json_path = r"..\data\processed\data.json"
+        self.loader = LoadModule(model)
         self.batch_size=batch_size
-        self.model = model
-        self.trainloader, self.valloader = self.load_data()
-        self.testloader = self.valloader
+        self.kfold = kfold
         self.using_cuda(cuda)
-
         self.lr = learning_rate
         self.epoch = epoch
         self.loss_fn = nn.CrossEntropyLoss()
-        self.optim = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
-
-        self.log_path = "../logs/log_" + '_'.join([self.model._get_name(), str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda)])
-        self.writer = SummaryWriter(log_dir=self.log_path)
-
-        if self.cuda is True:
-            self.model.cuda()
-            self.loss_fn.cuda()
+        self.log_path = "../logs/log_" + '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.kfold)])
 
     def using_cuda(self, cuda):
         if cuda is True:
@@ -39,12 +31,57 @@ class MyTraniner(object):
 
     def load_data(self): 
         self.train_data = MyData(json_path=self.json_path, train=True)
-        self.val_data = MyData(json_path=self.json_path, train=False)
+        self.test_data = MyData(json_path=self.json_path, train=False)
         train_dataloader = DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0)
-        val_dataloader = DataLoader(self.val_data, batch_size=self.batch_size, shuffle=False, num_workers=0)
-        return train_dataloader, val_dataloader
+        test_dataloader = DataLoader(self.test_data, batch_size=self.batch_size, shuffle=False, num_workers=0)
+        return train_dataloader, test_dataloader
 
-    # --- trainning with train- and testdataset ---
+    def generate_model_path(self, fold_i=1):
+        base_path = "../weights/model_"
+        name = '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.kfold)])
+        os.makedirs(base_path + name, exist_ok=True)
+        model_path = base_path + name + '/' + '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(fold_i)]) + ".pth"
+        return model_path
+    
+    def generate_log_dic(self):
+        log_dic = dict()
+        log_dic["info"] = {"model": self.loader.name,
+                           "learning rate": self.lr,
+                           "batch size": self.batch_size,
+                           "epoch": self.epoch,
+                           "using cuda": self.cuda}
+        if self.kfold == 1:
+            log_dic["model accuracy"] = ""
+            log_dic["log"] = dict()
+        else:
+            log_dic["model average accuracy"] = dict()
+            log_dic["log"] = dict()
+        return log_dic
+
+    @staticmethod
+    def generate_epoch_dic():
+        epoch_dic = dict()
+        epoch_dic= {"train loss": list(),
+                    "train accuracy": list(),
+                    "val loss": list(),
+                    "val accuracy": list()}
+        return epoch_dic
+    
+    @staticmethod
+    def write_log(epoch_dic, train_loss, train_accuracy, val_loss, val_accuracy):
+        epoch_dic["train loss"].append(train_loss)
+        epoch_dic["train accuracy"].append(train_accuracy)
+        epoch_dic["val loss"].append(val_loss)
+        epoch_dic["val accuracy"].append(val_accuracy)
+        return epoch_dic
+    
+    def save_log(self, log_dic):
+        os.makedirs(self.log_path, exist_ok=True)
+        log_name = '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.kfold)]) + ".json"
+        log_path = os.path.join(self.log_path, log_name)
+        with open(log_path, 'w') as file:
+             json.dump(log_dic, file)
+
     def train_epoch(self):
         train_loss = 0
         pred_true = 0
@@ -66,6 +103,7 @@ class MyTraniner(object):
 
             train_loss += loss.item()
             pred_true += (outputs.argmax(1)==labels).sum().item()
+
         return train_loss/len(self.trainloader), pred_true/len(self.trainloader.sampler)
 
     def validate_epoch(self):
@@ -85,32 +123,58 @@ class MyTraniner(object):
                 loss = self.loss_fn(outputs, labels)
             val_loss += loss.item()
             pred_true += (outputs.argmax(1)==labels).sum().item()
+
         return val_loss/len(self.valloader), pred_true/len(self.valloader.sampler)
     
-    def train(self):
+    def easy_train(self):
         try:
+            # initialization for model, loaders, optimizer and writer
+            self.model = self.loader()
+            self.trainloader, self.valloader = self.load_data()
+            self.optim = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
+
+            log_dic = self.generate_log_dic()
+            epoch_dic = self.generate_epoch_dic()
+
+            if self.cuda is True:
+                self.model.cuda()
+                self.loss_fn.cuda()
+
             for epoch in range(1, self.epoch+1):
                 train_loss, train_accuracy = self.train_epoch()
                 val_loss, val_accuracy = self.validate_epoch()
                 print("epoch {0}: train loss: {1} train accuracy: {2} validation loss: {3} validation accuracy: {4}".format(epoch, round(train_loss, 3), round(train_accuracy, 3), round(val_loss, 3), round(val_accuracy, 3)))
-                self.writer.add_scalars("Model loss", {"train loss":train_loss, "validation loss":val_loss}, epoch)
-                self.writer.add_scalars("Model accuracy", {"train accuracy":train_accuracy, "validation accuracy":val_accuracy}, epoch)
-            model_path = "../weights/model_" + '_'.join([self.model._get_name(), str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda)]) + ".pth"
+                epoch_dic = self.write_log(epoch_dic, train_loss, train_accuracy, val_loss, val_accuracy)
+
+            log_dic["log"] = epoch_dic
+            log_dic["model accuracy"] = val_accuracy
+            model_path = self.generate_model_path()
             self.save_model(model_path)
+            self.save_log(log_dic)
         finally:
-            # self.save_graph()
-            self.writer.close()
             torch.cuda.empty_cache()
 
-    # --- trainning with k-fold, train-, validation- and testdataset ---
-    def k_fold_train(self, k):
+    def k_fold_train(self):
         try:
-            kfold = KFold(n_splits=k)
+            kfold = KFold(n_splits=self.kfold)
             fold_loss = list()
             fold_accs = list()
+            _, _ = self.load_data() # only train_data need
+            log_dic = self.generate_log_dic()
 
             for fold_i, (train_ids, val_ids) in enumerate(kfold.split(self.train_data)):
-                self.writer = SummaryWriter(log_dir=self.log_path)
+
+                print("----- fold {} -----".format(fold_i+1))
+                
+                # initialization for model, loaders, optimizer and writer for each fold process
+                self.model = self.loader()
+                self.optim = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
+
+                if self.cuda is True:
+                    self.model.cuda()
+                    self.loss_fn.cuda()
+
+                epoch_dic = self.generate_epoch_dic()
 
                 train_sampler = SubsetRandomSampler(train_ids)
                 val_sampler = SubsetRandomSampler(val_ids)
@@ -119,31 +183,32 @@ class MyTraniner(object):
                 self.valloader = DataLoader(dataset=self.train_data, batch_size=self.batch_size, sampler=val_sampler)
 
                 for epoch in range(1, self.epoch+1):
+
                     train_loss, train_accuracy = self.train_epoch()
                     val_loss, val_accuracy = self.validate_epoch()
                     print("epoch {0}: train loss: {1} train accuracy: {2} validation loss: {3} validation accuracy: {4}".format(epoch, round(train_loss, 3), round(train_accuracy, 3), round(val_loss, 3), round(val_accuracy, 3)))
-                    self.writer.add_scalars("Model loss kfold {}".format(fold_i), {"train loss" :train_loss, "validation loss":val_loss}, epoch)
-                    self.writer.add_scalars("Model accuracy kfold {}".format(fold_i), {"train accuracy":train_accuracy, "validation accuracy":val_accuracy}, epoch)
+                    epoch_dic = self.write_log(epoch_dic, train_loss, train_accuracy, val_loss, val_accuracy)
+
+                log_dic["log"][str(fold_i+1)] = epoch_dic
                 fold_loss.append(val_loss)
                 fold_accs.append(val_accuracy)
-                model_path = "../weights/model_" + '_'.join([self.model._get_name(), str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda)]) + '/' + '_'.join([self.model._get_name(), str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda)]) + ".pth"
-                os.makedirs("../weights/model_" + '_'.join([self.model._get_name(), str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda)]), exist_ok=True)
-                self.save_model(model_path)
+                # model_path = self.generate_model_path(fold_i)
+                # self.save_model(model_path)
             fold_loss = np.array(fold_loss)
             fold_accs = np.array(fold_accs)
-            return [fold_loss.mean, fold_loss.std, fold_accs.mean, fold_accs.std]
+            log_dic["model average accuracy"] = {"fold loss mean": float(fold_loss.mean()), "fold loss std": float(fold_loss.std()), "fold acc mean": float(fold_accs.mean()), "fold acc std": float(fold_accs.std())}
+            self.save_log(log_dic)
                     
         finally:
-            self.writer.close()
             torch.cuda.empty_cache()
+
+    def train(self):
+        if self.kfold == 1:
+            self.easy_train()
+        elif self.kfold < 1:
+            print("kfold is not valid.")
+        else:
+            self.k_fold_train()
 
     def save_model(self, model_path):
         torch.save(self.model.state_dict(), model_path)
-
-    def save_graph(self):
-        for data in self.valloader:
-            imgs, labels = data
-            img = imgs[0]
-            if img is not None:
-                break
-        self.writer.add_graph(self.model, img)

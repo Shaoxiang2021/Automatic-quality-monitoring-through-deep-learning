@@ -10,7 +10,7 @@ import json
 from model import LoadModule
 
 class MyTraniner(object):
-    def __init__(self, model:str, batch_size:int, learning_rate:float, epoch:int, kfold=1, aug=0, cuda=False):
+    def __init__(self, model:str, batch_size:int, learning_rate:float, epoch:int, kfold=1, aug=False, cuda=False):
         
         self.seed = torch.cuda.manual_seed(1)
         self.aug = aug
@@ -22,7 +22,6 @@ class MyTraniner(object):
         self.lr = learning_rate
         self.epoch = epoch
         self.loss_fn = nn.CrossEntropyLoss()
-        self.log_path = "../logs/log_" + '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.kfold), str(self.aug)])
 
     def using_cuda(self, cuda):
         if cuda is True:
@@ -32,19 +31,16 @@ class MyTraniner(object):
             self.cuda = False
 
     def load_data(self): 
-        self.train_data = MyData(json_path=self.json_path, train=True)
-        if self.aug > 0:
-            self.train_data = self.train_data + MyData(json_path=self.json_path, train=True, aug=self.aug)
+        self.train_data = MyData(json_path=self.json_path, train=True, aug=self.aug)
         self.test_data = MyData(json_path=self.json_path, train=False)
-        train_dataloader = DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=0, generator=self.seed)
-        test_dataloader = DataLoader(self.test_data, batch_size=self.batch_size, shuffle=False, num_workers=0, generator=self.seed)
+        train_dataloader = DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=8, generator=self.seed, pin_memory=True)
+        test_dataloader = DataLoader(self.test_data, batch_size=self.batch_size, shuffle=False, num_workers=8, generator=self.seed, pin_memory=True)
         return train_dataloader, test_dataloader
 
-    def generate_model_path(self, fold_i=1):
-        base_path = "../weights/model_"
-        name = '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.aug)])
-        os.makedirs(base_path + name, exist_ok=True)
-        model_path = base_path + name + '/' + '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.aug)]) + ".pth"
+    def generate_model_path(self):
+        base_path = "../weights"
+        os.makedirs(base_path, exist_ok=True)
+        model_path = os.path.join(base_path, '_'.join(["model", self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.aug)]) + ".pth")
         return model_path
     
     def generate_log_dic(self):
@@ -53,6 +49,7 @@ class MyTraniner(object):
                            "learning rate": self.lr,
                            "batch size": self.batch_size,
                            "epoch": self.epoch,
+                           "augumentation": self.aug,
                            "using cuda": self.cuda}
         if self.kfold == 1:
             log_dic["model accuracy"] = ""
@@ -80,9 +77,10 @@ class MyTraniner(object):
         return epoch_dic
     
     def save_log(self, log_dic):
-        os.makedirs(self.log_path, exist_ok=True)
-        log_name = '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.kfold)]) + ".json"
-        log_path = os.path.join(self.log_path, log_name)
+        base_path = "../logs"
+        os.makedirs(base_path, exist_ok=True)
+        log_name = '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.aug), str(self.kfold)]) + ".json"
+        log_path = os.path.join(base_path, log_name)
         with open(log_path, 'w') as file:
              json.dump(log_dic, file)
 
@@ -184,8 +182,8 @@ class MyTraniner(object):
                 train_sampler = SubsetRandomSampler(train_ids, generator=self.seed)
                 val_sampler = SubsetRandomSampler(val_ids, generator=self.seed)
 
-                self.trainloader = DataLoader(dataset=self.train_data, batch_size=self.batch_size, sampler=train_sampler, generator=self.seed)
-                self.valloader = DataLoader(dataset=self.train_data, batch_size=self.batch_size, sampler=val_sampler, generator=self.seed)
+                self.trainloader = DataLoader(dataset=self.train_data, batch_size=self.batch_size, sampler=train_sampler, generator=self.seed, num_workers=8, pin_memory=True)
+                self.valloader = DataLoader(dataset=self.train_data, batch_size=self.batch_size, sampler=val_sampler, generator=self.seed, num_workers=8, pin_memory=True)
 
                 for epoch in range(1, self.epoch+1):
 
@@ -197,8 +195,6 @@ class MyTraniner(object):
                 log_dic["log"][str(fold_i+1)] = epoch_dic
                 fold_loss.append(val_loss)
                 fold_accs.append(val_accuracy)
-                # model_path = self.generate_model_path(fold_i)
-                # self.save_model(model_path)
             fold_loss = np.array(fold_loss)
             fold_accs = np.array(fold_accs)
             log_dic["model average accuracy"] = {"fold loss mean": float(fold_loss.mean()), "fold loss std": float(fold_loss.std()), "fold acc mean": float(fold_accs.mean()), "fold acc std": float(fold_accs.std())}
@@ -242,8 +238,8 @@ class MyTraniner(object):
         json_path = model_path.removesuffix(".pth") + ".json"
 
         if self.cuda is True:
-                    self.model.cuda()
-                    self.loss_fn.cuda()
+            self.model.cuda()
+            self.loss_fn.cuda()
 
         _, self.valloader = self.load_data()
         self.optim = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)

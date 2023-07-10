@@ -98,8 +98,7 @@ def preprocess_data(src_dir:str, out_dir:str):
         file.write(json.dumps(out_json, indent=4))
 
 class MyData(Dataset):
-    def __init__(self, json_path:str, train:bool, transform=None, aug=0):
-        self.transform = transform
+    def __init__(self, json_path:str, train:bool, aug=False):
         self.aug = aug
         with open(json_path) as file:
             self.data_dic = json.load(file)
@@ -107,26 +106,19 @@ class MyData(Dataset):
         self.std = self.data_dic["info"]["std"]
 
         if train is True:
-            if self.aug == 0:
-                self.paths = [sample["path"] for sample in self.data_dic["train"]]
-                self.labels = [sample["label"] for sample in self.data_dic["train"]]
-            elif self.aug > 0:
-                aug_paths = list()
-                aug_labels = list()
-                paths = [sample["path"] for sample in self.data_dic["train"]]
-                labels = [sample["label"] for sample in self.data_dic["train"]]
-                random.seed(1)
-                for _ in range(int(len(paths)*aug)):
-                    idx = random.randint(0, len(paths)-1)
-                    aug_paths.append(paths[idx])
-                    aug_labels.append(labels[idx])
-                self.paths = aug_paths
-                self.labels = aug_labels
-            else:
-                print("wrong aug input.")
+            self.paths = [sample["path"] for sample in self.data_dic["train"]]
+            self.labels = [sample["label"] for sample in self.data_dic["train"]]
         else:
             self.paths = [sample["path"] for sample in self.data_dic["test"]]
             self.labels = [sample["label"] for sample in self.data_dic["test"]]
+        
+        self.tr_transform = transforms.Compose([transforms.ToTensor(), 
+                                                transforms.RandomRotation(degrees=5), 
+                                                transforms.ColorJitter(brightness=(0.5, 1.5)), 
+                                                transforms.GaussianBlur((7, 7), sigma=(0.1, 0.5)), 
+                                                transforms.Normalize(mean=self.mean, std=self.std)])
+        self.vl_transform = transforms.Compose([transforms.ToTensor(), 
+                                                transforms.Normalize(mean=self.mean, std=self.std)])
 
     def __getitem__(self, index):
         if torch.is_tensor(index):
@@ -135,39 +127,16 @@ class MyData(Dataset):
         # load specific sample
         img = np.load(self.paths[index], allow_pickle=True)
         label = self.labels[index]
-            
-        if self.aug > 0:
-            img = self.augumentation(img)
         
-        transformer_train = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=self.mean, std=self.std)])
-        img = transformer_train(img)
+        if self.aug is True:
+            img = self.tr_transform(img)
+        else:
+            img = self.vl_transform(img)
+        
         img = img.type(torch.float32)
         label = torch.tensor(label, dtype=torch.long)
-
-        # apply transforms
-        if self.transform is not None:
-            img = self.transform(img)
         
         return img, label
     
     def __len__(self):
         return len(self.paths)
-    
-    @staticmethod
-    def augumentation(img):
-        img = Image.fromarray((img*255).astype(np.uint8))
-
-        idx = random.randint(1, 4)
-        if idx == 1:
-            transformer = transforms.RandomRotation(degrees=10)
-        elif idx == 2:
-            transformer = transforms.GaussianBlur((7, 7), sigma=1)
-        elif idx == 3:
-            transformer = transforms.RandomAutocontrast(p=1)
-        else:
-            transformer = transforms.ColorJitter(brightness=1)
-
-        img = transformer(img)
-        img = np.array(img)/255
-
-        return img

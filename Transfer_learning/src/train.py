@@ -1,5 +1,5 @@
 import torch
-from torch import nn
+from torch.nn import CrossEntropyLoss
 from dataset import MyData
 from torch.utils.data import DataLoader
 from torch.utils.data import SubsetRandomSampler
@@ -8,20 +8,26 @@ import numpy as np
 import os
 import json
 from model import LoadModule
+from pytorchtools import EarlyStopping
+from torch.optim import lr_scheduler, Adam
 
 class MyTraniner(object):
-    def __init__(self, model:str, batch_size:int, learning_rate:float, epoch:int, kfold=1, aug=False, cuda=False):
+    def __init__(self, config):
+
+        self.json_path = r"..\data\processed\data_train.json"
         
         self.seed = torch.cuda.manual_seed(1)
-        self.aug = aug
-        self.json_path = r"..\data\processed\data.json"
-        self.loader = LoadModule(model)
-        self.batch_size=batch_size
-        self.kfold = kfold
-        self.using_cuda(cuda)
-        self.lr = learning_rate
-        self.epoch = epoch
-        self.loss_fn = nn.CrossEntropyLoss()
+        self.loader = LoadModule(config["model"])
+        self.loss_fn = CrossEntropyLoss()
+
+        self.aug = config["aug"]
+        self.batch_size = config["batch_size"]
+        self.kfold = config["kfold"]
+        self.lr = config["learning_rate"]
+        self.epoch = config["epoch"]
+        self.early_stopping = config["early_stopping"]
+
+        self.using_cuda(config["cuda"])
 
     def using_cuda(self, cuda):
         if cuda is True:
@@ -40,7 +46,7 @@ class MyTraniner(object):
     def generate_model_path(self):
         base_path = "../weights"
         os.makedirs(base_path, exist_ok=True)
-        model_path = os.path.join(base_path, '_'.join(["model", self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.aug)]) + ".pth")
+        model_path = os.path.join(base_path, '_'.join(["model", self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.aug), str(self.early_stopping)]) + ".pth")
         return model_path
     
     def generate_log_dic(self):
@@ -50,6 +56,7 @@ class MyTraniner(object):
                            "batch size": self.batch_size,
                            "epoch": self.epoch,
                            "augumentation": self.aug,
+                           "early stopping": self.early_stopping,
                            "using cuda": self.cuda}
         if self.kfold == 1:
             log_dic["model accuracy"] = ""
@@ -79,7 +86,7 @@ class MyTraniner(object):
     def save_log(self, log_dic):
         base_path = "../logs"
         os.makedirs(base_path, exist_ok=True)
-        log_name = '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.aug), str(self.kfold)]) + ".json"
+        log_name = '_'.join([self.loader.name, str(self.lr), str(self.batch_size), str(self.epoch), str(self.cuda), str(self.aug), str(self.early_stopping), str(self.kfold)]) + ".json"
         log_path = os.path.join(base_path, log_name)
         with open(log_path, 'w') as file:
              json.dump(log_dic, file)
@@ -87,6 +94,7 @@ class MyTraniner(object):
     def train_epoch(self):
         train_loss = 0
         pred_true = 0
+
         self.model.train()
         for data in self.trainloader:
             imgs, labels = data
@@ -111,6 +119,7 @@ class MyTraniner(object):
     def validate_epoch(self):
         val_loss = 0
         pred_true = 0
+
         self.model.eval()
         with torch.no_grad():
             for data in self.valloader:
@@ -129,12 +138,16 @@ class MyTraniner(object):
 
         return val_loss/len(self.valloader), pred_true/len(self.valloader.sampler)
     
-    def easy_train(self):
+    def direct_train(self):
         try:
             # initialization for model, loaders, optimizer and writer
             self.model = self.loader()
             self.trainloader, self.valloader = self.load_data()
-            self.optim = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
+            self.optim = Adam(params=self.model.parameters(), lr=self.lr)
+            self.scheduler = lr_scheduler.StepLR(self.optim, step_size=5, gamma=0.9)
+
+            if self.early_stopping is True:
+                early_stopping = EarlyStopping(patience=5)
 
             log_dic = self.generate_log_dic()
             epoch_dic = self.generate_epoch_dic()
@@ -149,6 +162,14 @@ class MyTraniner(object):
                 print("epoch {0}: train loss: {1} train accuracy: {2} validation loss: {3} validation accuracy: {4}".format(epoch, round(train_loss, 3), round(train_accuracy, 3), round(val_loss, 3), round(val_accuracy, 3)))
                 epoch_dic = self.write_log(epoch_dic, train_loss, train_accuracy, val_loss, val_accuracy)
 
+                self.scheduler.step()
+
+                if self.early_stopping is True:
+                    if early_stopping(self.model, val_loss) is True:
+                        self.model = early_stopping.best_model
+                        print("early stopping at echo {}".format(epoch))
+                        break
+
             log_dic["log"] = epoch_dic
             log_dic["model accuracy"] = val_accuracy
             model_path = self.generate_model_path()
@@ -162,7 +183,7 @@ class MyTraniner(object):
             kfold = KFold(n_splits=self.kfold, shuffle=True)
             fold_loss = list()
             fold_accs = list()
-            _, _ = self.load_data() # only train_data need
+            _, _ = self.load_data() # only train_data needed
             log_dic = self.generate_log_dic()
 
             for fold_i, (train_ids, val_ids) in enumerate(kfold.split(self.train_data)):
@@ -171,7 +192,7 @@ class MyTraniner(object):
                 
                 # initialization for model, loaders, optimizer and writer for each fold process
                 self.model = self.loader()
-                self.optim = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
+                self.optim = Adam(params=self.model.parameters(), lr=self.lr)
 
                 if self.cuda is True:
                     self.model.cuda()
@@ -204,34 +225,14 @@ class MyTraniner(object):
             torch.cuda.empty_cache()
 
     def train(self):
-        if self.kfold == 1:
-            self.easy_train()
-        elif self.kfold < 1:
-            print("kfold is not valid.")
+        if self.kfold is False:
+            self.direct_train()
+        elif self.kfold <= 1:
+            print("kfold is not valid, k value must greater than 1.")
         else:
             self.k_fold_train()
 
-    def retrain(self):
-        try:
-            # initialization for model, loaders, optimizer and writer
-            self.model = self.loader()
-            self.trainloader, _ = self.load_data()
-            self.optim = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
-
-            if self.cuda is True:
-                self.model.cuda()
-                self.loss_fn.cuda()
-
-            for epoch in range(1, self.epoch+1):
-                train_loss, train_accuracy = self.train_epoch()
-                print("epoch {0}: train loss: {1} train accuracy: {2}".format(epoch, round(train_loss, 3), round(train_accuracy, 3)))
-            model_path = self.generate_model_path()
-            self.save_model(model_path)
-
-        finally:
-            torch.cuda.empty_cache()
-
-    def accuracy(self):
+    def validation(self):
         model_path = self.generate_model_path()
         self.model = self.loader()
         self.model.load_state_dict(torch.load(model_path))
@@ -242,7 +243,32 @@ class MyTraniner(object):
             self.loss_fn.cuda()
 
         _, self.valloader = self.load_data()
-        self.optim = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
+        self.optim = Adam(params=self.model.parameters(), lr=self.lr)
+        val_loss, val_accuracy = self.validate_epoch()
+
+        accuracy_dic = dict()
+        accuracy_dic["info"] = self.generate_log_dic()["info"]
+        accuracy_dic["accuracy"] = {"test loss": val_loss, "test accuracy": val_accuracy}
+
+        with open(json_path, 'w') as file:
+             json.dump(accuracy_dic, file)
+             
+        print("model --- test loss: " + str(val_loss) + " test accuracy: " + str(val_accuracy))
+    
+    def evaluation(self):
+        model_path = self.generate_model_path()
+        self.model = self.loader()
+        self.model.load_state_dict(torch.load(model_path))
+        json_path = "evaluation.json"
+
+        if self.cuda is True:
+            self.model.cuda()
+            self.loss_fn.cuda()
+
+        self.evaluation_data = MyData(json_path=r"..\data\processed\data_evaluation.json", train=False, evaluation=True)
+        self.valloader = DataLoader(self.evaluation_data, batch_size=self.batch_size, shuffle=False, num_workers=8, generator=self.seed, pin_memory=True)
+
+        self.optim = Adam(params=self.model.parameters(), lr=self.lr)
         val_loss, val_accuracy = self.validate_epoch()
 
         accuracy_dic = dict()

@@ -1,0 +1,1 @@
+{"info": {"model": "DenseNet121", "learning rate": 1e-05, "batch size": 16, "epoch": 60, "augumentation": true, "early stopping": true, "using cuda": true}, "accuracy": {"test loss": 0.23849124275147915, "test accuracy": 0.8803418803418803}}

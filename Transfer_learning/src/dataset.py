@@ -48,6 +48,54 @@ def split_dataset(folder_path:str, output_train_path:str, output_test_path:str):
                         destination_folder = os.path.join(copy_folder_path, file_name)
                         shutil.copy(image_path, destination_folder)
 
+def split_evaluation_dataset(folder_path:str, output_evaluation_path:str):
+    num_data = 0
+    for root, _, files in os.walk(folder_path):
+         for file in files:
+            if file.endswith(('.json')):
+                json_path = os.path.join(root, file)
+                with open(json_path) as json_file:
+                    json_data = json.load(json_file)
+            if file.endswith(('.jpg')):
+                senario = file.split('_')[-2]
+                if senario != "5":
+                    position = file.split('_')[-1].removesuffix(".jpg")
+                    image_path = os.path.join(root, file)
+                    if random.random() <= 0.012:
+                        num_data += 1
+                        copy_folder_path = output_evaluation_path
+                        file_name = str(json_data[position])
+                        destination_folder = os.path.join(copy_folder_path, file_name)
+                        shutil.copy(image_path, destination_folder)
+                        if num_data >= 120:
+                            return None
+
+def preprocess_evaluation_data(src_dir:str, out_dir:str):
+
+    out_json = dict()
+    out_json["evaluation"] = list()
+
+    for label in os.listdir(f"{src_dir}"):
+        print("processing", label)
+        curr_out_dir = f"{out_dir}/{label}"
+        os.makedirs(curr_out_dir, exist_ok=True)
+
+        for file_name in os.listdir(f"{src_dir}/{label}"):
+             # open image in greyscale mode
+            img_frame = Image.open(f"{src_dir}/{label}/{file_name}")
+            # convert to numpy and scale
+            img_np = np.array(img_frame)/255.
+            np.save(f"{curr_out_dir}/{file_name.replace('.jpg', '.npy')}", img_np)
+
+            # append path and label
+            out_json["evaluation"].append({
+                "path": f"{curr_out_dir}/{file_name.replace('.jpg', '.npy')}",
+                "label": int(label)
+            })
+
+    with open(out_dir.removesuffix("/evaluation") + "/data_evaluation.json", "w") as file:
+        file.write(json.dumps(out_json, indent=4))
+
 # convert images into numpy files and move them to processed folder
 # caculate mean and standard, save them in json file with path for each numpy file
 def preprocess_data(src_dir:str, out_dir:str):
@@ -94,23 +142,27 @@ def preprocess_data(src_dir:str, out_dir:str):
 
     out_json["info"]["mean"] = list(out_json["info"]["mean"]/len(out_json["train"]))
     out_json["info"]["std"] = list(out_json["info"]["std"]/len(out_json["train"]))
-    with open(out_dir + "/data.json", "w") as file:
+    with open(out_dir + "/data_train.json", "w") as file:
         file.write(json.dumps(out_json, indent=4))
 
 class MyData(Dataset):
-    def __init__(self, json_path:str, train:bool, aug=False):
+    def __init__(self, json_path:str, train:bool, evaluation=False, aug=False):
         self.aug = aug
         with open(json_path) as file:
             self.data_dic = json.load(file)
         self.mean = self.data_dic["info"]["mean"]
         self.std = self.data_dic["info"]["std"]
 
-        if train is True:
-            self.paths = [sample["path"] for sample in self.data_dic["train"]]
-            self.labels = [sample["label"] for sample in self.data_dic["train"]]
+        if evaluation is True:
+            self.paths = [sample["path"] for sample in self.data_dic["evaluation"]]
+            self.labels = [sample["label"] for sample in self.data_dic["evaluation"]]
         else:
-            self.paths = [sample["path"] for sample in self.data_dic["test"]]
-            self.labels = [sample["label"] for sample in self.data_dic["test"]]
+            if train is True:
+                self.paths = [sample["path"] for sample in self.data_dic["train"]]
+                self.labels = [sample["label"] for sample in self.data_dic["train"]]
+            else:
+                self.paths = [sample["path"] for sample in self.data_dic["test"]]
+                self.labels = [sample["label"] for sample in self.data_dic["test"]]
         
         self.tr_transform = transforms.Compose([transforms.ToTensor(), 
                                                 transforms.RandomRotation(degrees=5), 

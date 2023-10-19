@@ -49,7 +49,7 @@ def split_dataset(folder_path:str, output_train_path:str, output_test_path:str):
                         shutil.copy(image_path, destination_folder)
 
 def split_evaluation_dataset(folder_path:str, output_evaluation_path:str):
-    num_data = 0
+    print("starting spliting data ...")
     for root, _, files in os.walk(folder_path):
          for file in files:
             if file.endswith(('.json')):
@@ -61,19 +61,12 @@ def split_evaluation_dataset(folder_path:str, output_evaluation_path:str):
                 if senario != "5":
                     position = file.split('_')[-1].removesuffix(".jpg")
                     image_path = os.path.join(root, file)
-                    if random.random() <= 0.012:
-                        num_data += 1
-                        copy_folder_path = output_evaluation_path
-                        file_name = str(json_data[position])
-                        destination_folder = os.path.join(copy_folder_path, file_name)
-                        shutil.copy(image_path, destination_folder)
-                        if num_data >= 120:
-                            return None
+                    copy_folder_path = output_evaluation_path
+                    file_name = str(json_data[position])
+                    destination_folder = os.path.join(copy_folder_path, file_name)
+                    shutil.copy(image_path, destination_folder)
 
 def preprocess_evaluation_data(src_dir:str, out_dir:str):
-
-    out_json = dict()
-    out_json["evaluation"] = list()
 
     for label in os.listdir(f"{src_dir}"):
         print("processing", label)
@@ -87,13 +80,34 @@ def preprocess_evaluation_data(src_dir:str, out_dir:str):
             img_np = np.array(img_frame)/255.
             np.save(f"{curr_out_dir}/{file_name.replace('.jpg', '.npy')}", img_np)
 
+def making_evaluation_json(src_dir:str, out_dir:str, szenario:list, filename):
+
+    out_json = {
+        "info": {
+            "mean": [0.5464275974422526,
+                     0.480967096142885,
+                     0.4913222950300173],
+            "std": [0.23247085631060224,
+                    0.21001021511970114,
+                    0.2134178785697123]
+                }
+            }
+    out_json["evaluation"] = list()
+
+    for label in os.listdir(f"{src_dir}"):
+        print("processing", label)
+
+        for file_name in os.listdir(f"{src_dir}/{label}"):
+            
+            szenario_index = int(file_name.split('_')[-2])
+            if szenario_index in szenario:
             # append path and label
-            out_json["evaluation"].append({
-                "path": f"{curr_out_dir}/{file_name.replace('.jpg', '.npy')}",
-                "label": int(label)
+                out_json["evaluation"].append({
+                    "path": f"{src_dir}/{label}/{file_name}",
+                    "label": int(label)
             })
 
-    with open(out_dir.removesuffix("/evaluation") + "/data_evaluation.json", "w") as file:
+    with open(out_dir + "/" + filename + ".json", "w") as file:
         file.write(json.dumps(out_json, indent=4))
 
 # convert images into numpy files and move them to processed folder
@@ -164,11 +178,20 @@ class MyData(Dataset):
                 self.paths = [sample["path"] for sample in self.data_dic["test"]]
                 self.labels = [sample["label"] for sample in self.data_dic["test"]]
         
+        # AD Version 1
         self.tr_transform = transforms.Compose([transforms.ToTensor(), 
                                                 transforms.RandomRotation(degrees=5), 
-                                                transforms.ColorJitter(brightness=(0.5, 1.5)), 
+                                                transforms.ColorJitter(hue=0.1, saturation=0.1, brightness=0.7), 
                                                 transforms.GaussianBlur((7, 7), sigma=(0.1, 0.5)), 
                                                 transforms.Normalize(mean=self.mean, std=self.std)])
+        # AD Version 2
+        """self.tr_transform = transforms.Compose([transforms.ToTensor(), 
+                                                transforms.RandomAffine(degrees=2),
+                                                transforms.RandomHorizontalFlip(p=0.5),
+                                                transforms.RandomVerticalFlip(p=0.5),
+                                                transforms.RandomGrayscale(p=0.1),
+                                                transforms.Normalize(mean=self.mean, std=self.std)])"""
+
         self.vl_transform = transforms.Compose([transforms.ToTensor(), 
                                                 transforms.Normalize(mean=self.mean, std=self.std)])
 

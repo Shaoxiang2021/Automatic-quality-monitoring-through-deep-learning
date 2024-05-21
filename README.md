@@ -7,4 +7,4 @@ Ziel: Qualitätüberwachung der Schweißnaht via Deep-Learning-Verfahren in der 
 3. Trainingsprozess
 4. Bewertung
 
-Erweiterung für Bewertung der Robustheit der CNN-Modelle
+Die Trainingspipeline ist entwickelt via Pytorch. 

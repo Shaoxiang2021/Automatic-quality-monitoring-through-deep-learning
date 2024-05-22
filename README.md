@@ -43,9 +43,13 @@ project
 ```
 
 dataset.py: Trainingsdaten und Validierungsdaten bereitstellen, Data-Augmentation
+
 label_manager.py: manuell labeln
+
 model.py: verschiedene Modelle aufladen
+
 pytorchtools.py: Trainingstechnik earlystopping
+
 train.py: Training, Validierung, Evaluation
 
 ## (3) Running the Software

@@ -63,15 +63,13 @@ Rotation:
 <div align="center">
     <img src="readme/Drehen.png" width="400"/>
     <img src="readme/Drehen_um_X.png" width="400"/>
-<div>
+
 
 Helligkeitsänderung:
-<div align="center">
     <img src="readme/Helligkeit.png" width="400"/>
-<div>
+
 
 Unschärfe:
-<div align="center">
     <img src="readme/Unscharf.png" width="400"/>
 <div>
 

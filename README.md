@@ -57,9 +57,9 @@ Um Trainingspipeline effizient aufzubauen, wird die Funktionen in .ipynb debug u
 
 ## (4) Benchmark
 
-Aktuell verwenden meist Benchmarks für Bewertung der Robustheit künstlich Daten. In meiner Arbeit wird natürliche Daten verwendet, die durch Panda-Roboter unter natürliche Bedingungen gesammelt werden.
+Aktuell verwenden meist Benchmarks für Bewertung der Robustheit künstlich Daten. In meiner Arbeit wird natürliche Daten verwendet, die durch Panda-Roboter bei den natürlichen Bedingungen gesammelt werden.
 
-
+<img src="readme/Drehen.png" alt="alt text" width="500" height="300">
 
 ## Authors
 Shaoxiang Tan (ge28kiw@tum.de)

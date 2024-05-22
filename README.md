@@ -1,7 +1,7 @@
 # Qualitätüberwachung via Deep-Learning-Verfahren
 
 Ziel: Qualitätüberwachung der Schweißnaht via Deep-Learning-Verfahren in der Betrachtung von Gratbildung (Klassifizierungsproblem)
-Die Robustheit des Modells wird durch bestehende Benchmark bewertet. Testdaten für Benchmark wird via PandaRoboter bereitgestellt, mehr bitte [GitHub](https://github.com/Shaoxiang2021/PandaRobot-motion-planning) anschauen.
+Die Robustheit des Modells wird durch bestehende Benchmark bewertet. Testdaten für Benchmark wird via PandaRoboter bereitgestellt, mehr bitte [PandaRobot-motion-planning](https://github.com/Shaoxiang2021/PandaRobot-motion-planning) anschauen.
 
 1. Gesammelte Bilddaten labeln
 2. Trainingsdaten Vorverarbeiten
@@ -32,13 +32,11 @@ project
 │   README.md
 │
 └───src
-│   │    
-│   └───source_images
-│   │   - dataset.py
-│   │   - label_manager.py
-│   │   - model.py
-│   │   - pytorchtools.py
-│   │   - train.py
+│   - dataset.py
+│   - label_manager.py
+│   - model.py
+│   - pytorchtools.py
+│   - train.py
 │   
 └─────
 ```

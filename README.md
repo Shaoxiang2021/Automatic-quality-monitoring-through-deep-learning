@@ -16,6 +16,7 @@ Die Trainingspipeline ist entwickelt via Pytorch.
 - [(1) Environment](#(1)-Environment) 
 - [(2) Software Structure](#(2)-Software-Structure) 
 - [(3) Run The Software](#(3)-Run-The-Software)
+- [(4) Benchmark](#(3)-Benchmark)
 
 ## (1) Environment
 
@@ -42,17 +43,21 @@ project
 └─────
 ```
 
-dataset.py: Trainingsdaten und Validierungsdaten bereitstellen, Data-Augmentation <br />
-label_manager.py: manuell labeln <br />
-model.py: verschiedene Modelle aufladen <br />
-pytorchtools.py: Trainingstechnik earlystopping <br />
-train.py: Training, Validierung, Evaluation
+- `dataset.py`: Trainingsdaten und Validierungsdaten bereitstellen, Data-Augmentation <br />
+- `label_manager.py`: manuell labeln <br />
+- `model.py`: verschiedene Modelle aufladen <br />
+- `pytorchtools.py`: Trainingstechnik earlystopping <br />
+- `train.py`: Training, Validierung, Evaluation
 
 ## (3) Running the Software
 
 Um Trainingspipeline effizient aufzubauen, wird die Funktionen in .ipynb debug und getestet. Training und Evaluation werden via main.ipynb implementiert. 
 
 [(back to top)](#table-of-contents)
+
+## (4) Benchmark
+
+Aktuell verwenden meist Benchmarks für Bewertung der Robustheit künstlich Daten. In meiner Arbeit wird natürliche Daten verwendet, die durch Panda-Roboter unter natürliche Bedingungen gesammelt werden.
 
 
 
